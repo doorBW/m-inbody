@@ -30,6 +30,7 @@ class PacketCaptureService(
     private val packetParserService: PacketParserService,
     private val damageProcessingService: DamageProcessingService,
     private val networkInterfaceService: NetworkInterfaceService,
+    private val packetStatisticsService: PacketStatisticsService,
     @Value("\${packet.capture.filter:tcp and src port 16000}") private val captureFilter: String,
     @Value("\${packet.capture.interface:}") private val networkInterface: String
 ) {
@@ -340,7 +341,13 @@ class PacketCaptureService(
                 // Parse packet based on type
                 logger.debug { "[PACKET TYPE] Received packet - Type: $dataType, Length: $length, EncodeType: $encodeType" }
 
-                packetParserService.parsePacket(dataType, content)?.let { packet ->
+                val parsedPacket = packetParserService.parsePacket(dataType, content)
+                val parsedSuccessfully = parsedPacket != null
+
+                // 통계 기록
+                packetStatisticsService.recordPacket(dataType, content, parsedSuccessfully)
+
+                parsedPacket?.let { packet ->
                     packets.add(packet)
                     logger.debug { "[PACKET PARSED] Successfully parsed packet type=$dataType" }
                 } ?: run {
