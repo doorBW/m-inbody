@@ -211,7 +211,7 @@ jobs:
           ```
         files: |
           artifacts/*.jar
-          artifacts/*.exe
+          artifacts/*.msi
         draft: false
         prerelease: false
       env:
