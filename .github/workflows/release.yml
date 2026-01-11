@@ -79,6 +79,24 @@ jobs:
         Write-Host "Copied JAR to app directory"
       shell: pwsh
 
+    - name: Create launcher script
+      run: |
+        Write-Host "Creating launcher batch script..."
+
+        $launcherScript = @"
+        @echo off
+        setlocal enabledelayedexpansion
+
+        cd /d "%~dp0"
+
+        echo Starting M-INBODY...
+        "%~dp0runtime\bin\java.exe" -Dfile.encoding=UTF-8 -Dconsole.encoding=UTF-8 -Dsun.stdout.encoding=UTF-8 -Dsun.stderr.encoding=UTF-8 -jar "%~dp0app\m-inbody.jar" %*
+        "@
+
+        Set-Content -Path deploy\app\M-INBODY.bat -Value $launcherScript
+        Write-Host "Launcher script created"
+      shell: pwsh
+
     - name: Build MSI installer with jpackage
       run: |
         Write-Host "Building Windows MSI installer with jpackage..."
@@ -87,13 +105,14 @@ jobs:
 
         New-Item -ItemType Directory -Force -Path deploy\output
 
-        # Create MSI installer directly
+        # Create MSI installer with runtime
         & "$javaHome\bin\jpackage.exe" `
           --type msi `
           --name M-INBODY `
           --app-version 3.7.3 `
           --input deploy\app `
           --main-jar m-inbody.jar `
+          --main-class org.springframework.boot.loader.launch.JarLauncher `
           --dest deploy\output `
           --java-options "-Dfile.encoding=UTF-8" `
           --java-options "-Dconsole.encoding=UTF-8" `
