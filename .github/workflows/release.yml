@@ -37,7 +37,6 @@ jobs:
     name: Build Windows EXE
     needs: build-jar
     runs-on: windows-latest
-    continue-on-error: true
 
     steps:
     - uses: actions/checkout@v3
@@ -55,26 +54,140 @@ jobs:
         distribution: 'temurin'
 
     - name: Install Launch4j
-      run: |
-        choco install launch4j -y
+      run: choco install launch4j -y
       shell: pwsh
 
     - name: Install Inno Setup
+      run: choco install innosetup -y
+      shell: pwsh
+
+    - name: List downloaded JAR files
       run: |
-        choco install innosetup -y
+        Write-Host "Contents of deploy folder:"
+        Get-ChildItem -Path deploy -Recurse
       shell: pwsh
 
     - name: Create JRE bundle
       run: |
-        cd deploy
-        .\create-jre.bat
-      shell: cmd
+        Write-Host "Creating JRE bundle..."
+        $javaHome = $env:JAVA_HOME
+        Write-Host "JAVA_HOME: $javaHome"
 
-    - name: Build Windows installer
+        & "$javaHome\bin\jlink.exe" `
+          --add-modules java.base,java.desktop,java.logging,java.management,java.naming,java.net.http,java.security.jgss,java.sql,jdk.unsupported,jdk.crypto.ec `
+          --strip-debug `
+          --no-man-pages `
+          --no-header-files `
+          --compress=2 `
+          --output deploy\jre
+
+        Write-Host "JRE created successfully"
+        Get-ChildItem -Path deploy\jre
+      shell: pwsh
+
+    - name: Prepare build files
       run: |
-        cd deploy
-        .\build-m-inbody-simple.bat
-      shell: cmd
+        Write-Host "Preparing build files..."
+
+        # Find JAR file
+        $jarFile = Get-ChildItem -Path deploy -Filter *.jar | Select-Object -First 1
+        Write-Host "Found JAR: $($jarFile.Name)"
+
+        # Copy JAR to M-INBODY.jar
+        Copy-Item $jarFile.FullName -Destination deploy\M-INBODY.jar
+        Write-Host "Copied to M-INBODY.jar"
+      shell: pwsh
+
+    - name: Create Launch4j config
+      run: |
+        $config = @"
+        <?xml version="1.0" encoding="UTF-8"?>
+        <launch4jConfig>
+          <dontWrapJar>false</dontWrapJar>
+          <headerType>console</headerType>
+          <jar>M-INBODY.jar</jar>
+          <outfile>M-INBODY.exe</outfile>
+          <errTitle>M-INBODY Error</errTitle>
+          <cmdLine>--spring.profiles.active=prod</cmdLine>
+          <chdir>.</chdir>
+          <priority>normal</priority>
+          <stayAlive>true</stayAlive>
+          <jre>
+            <path>jre</path>
+            <minVersion></minVersion>
+            <jdkPreference>jreOnly</jdkPreference>
+            <opt>-Dfile.encoding=UTF-8 -Dconsole.encoding=UTF-8</opt>
+          </jre>
+        </launch4jConfig>
+        "@
+
+        Set-Content -Path deploy\launch4j-config.xml -Value $config
+        Write-Host "Launch4j config created"
+      shell: pwsh
+
+    - name: Build EXE with Launch4j
+      run: |
+        Write-Host "Building EXE with Launch4j..."
+        $launch4jPath = "C:\Program Files (x86)\Launch4j\launch4jc.exe"
+        if (-not (Test-Path $launch4jPath)) {
+          $launch4jPath = "C:\Program Files\Launch4j\launch4jc.exe"
+        }
+
+        Write-Host "Launch4j path: $launch4jPath"
+        & $launch4jPath deploy\launch4j-config.xml
+
+        Write-Host "EXE created"
+        Get-ChildItem -Path deploy\M-INBODY.exe
+      shell: pwsh
+
+    - name: Create Inno Setup script
+      run: |
+        $version = "${{ github.ref_name }}".Replace("v", "")
+
+        $script = @"
+        [Setup]
+        AppName=M-INBODY
+        AppVersion=$version
+        AppPublisher=M-INBODY
+        DefaultDirName={autopf}\M-INBODY
+        DisableProgramGroupPage=yes
+        OutputDir=deploy\output
+        OutputBaseFilename=M-INBODY-Setup
+        Compression=lzma
+        SolidCompression=yes
+        PrivilegesRequired=admin
+
+        [Files]
+        Source: "deploy\M-INBODY.exe"; DestDir: "{app}"; Flags: ignoreversion
+        Source: "deploy\M-INBODY.jar"; DestDir: "{app}"; Flags: ignoreversion
+        Source: "deploy\jre\*"; DestDir: "{app}\jre"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+        [Icons]
+        Name: "{autoprograms}\M-INBODY"; Filename: "{app}\M-INBODY.exe"
+        Name: "{autodesktop}\M-INBODY"; Filename: "{app}\M-INBODY.exe"
+
+        [Run]
+        Filename: "{app}\M-INBODY.exe"; Description: "Launch M-INBODY"; Flags: nowait postinstall skipifsilent
+        "@
+
+        New-Item -ItemType Directory -Force -Path deploy\output
+        Set-Content -Path inno-setup.iss -Value $script
+        Write-Host "Inno Setup script created"
+      shell: pwsh
+
+    - name: Build installer with Inno Setup
+      run: |
+        Write-Host "Building installer with Inno Setup..."
+        $innoPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+        if (-not (Test-Path $innoPath)) {
+          throw "Inno Setup not found at $innoPath"
+        }
+
+        & $innoPath inno-setup.iss
+
+        Write-Host "Installer created"
+        Get-ChildItem -Path deploy\output
+      shell: pwsh
 
     - name: Upload EXE installer
       uses: actions/upload-artifact@v4
@@ -86,7 +199,7 @@ jobs:
     name: Create Release
     needs: [build-jar, build-windows-exe]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/') && always()
+    if: startsWith(github.ref, 'refs/tags/')
 
     steps:
     - uses: actions/checkout@v3
@@ -99,7 +212,6 @@ jobs:
 
     - name: Download Windows installer
       uses: actions/download-artifact@v4
-      continue-on-error: true
       with:
         name: windows-installer
         path: artifacts/
