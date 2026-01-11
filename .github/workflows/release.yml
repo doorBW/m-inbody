@@ -27,7 +27,7 @@ jobs:
       run: ./gradlew clean build -x test
 
     - name: Upload JAR artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: jar-file
         path: build/libs/*.jar
@@ -42,7 +42,7 @@ jobs:
     - uses: actions/checkout@v3
 
     - name: Download JAR artifact
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: jar-file
         path: deploy/
@@ -76,7 +76,7 @@ jobs:
       shell: cmd
 
     - name: Upload EXE installer
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: windows-installer
         path: deploy/output/M-INBODY-Setup.exe
@@ -91,13 +91,13 @@ jobs:
     - uses: actions/checkout@v3
 
     - name: Download JAR artifact
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: jar-file
         path: artifacts/
 
     - name: Download Windows installer
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: windows-installer
         path: artifacts/
